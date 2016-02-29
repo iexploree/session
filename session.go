@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"sync"
@@ -62,22 +63,27 @@ func (manager *Manager) SessionStart(w http.ResponseWriter, r *http.Request) (se
 	cookie, err := r.Cookie(manager.cookieName)
 
 	if err != nil || cookie.Value == "" {
-		fmt.Println("cookie is empty, new session.")
+		log.Println("cookie is empty, new session.")
 
 		sid := manager.sessionId()
 		session, _ = manager.provider.SessionInit(sid)
+		/**
+		设置cookie的httponly为true,这个属性是设置是否可通过客户端脚本访问这个设置的cookie，
+		第一这个可以防止这个cookie被XSS读取从而引起session劫持，
+		第二cookie设置不会像URL重置方式那么容易获取sessionID。
+		*/
 		cookie := http.Cookie{Name: manager.cookieName, Value: url.QueryEscape(sid), Path: "/", HttpOnly: true, MaxAge: int(manager.maxlifetime)}
 		http.SetCookie(w, &cookie)
 	} else {
 		sid, _ := url.QueryUnescape(cookie.Value)
-		fmt.Println("cookie value:", cookie.Value, " sid:", sid)
+		log.Println("cookie value:", cookie.Value, " sid:", sid)
 
 		// yinfeng: 修改 BUG ，修改 SessionRead 如果不存在，不创建新的返回
 		var readerr error
 		session, readerr = manager.provider.SessionRead(sid)
 		if readerr != nil {
 			// 如果不存在session, 则创建一个新的
-			fmt.Println("new session")
+			log.Println("new session")
 			sid := manager.sessionId()
 			session, _ = manager.provider.SessionInit(sid)
 			cookie := http.Cookie{Name: manager.cookieName, Value: url.QueryEscape(sid), Path: "/", HttpOnly: true, MaxAge: int(manager.maxlifetime)}
@@ -100,6 +106,7 @@ func (manager *Manager) SessionDestroy(w http.ResponseWriter, r *http.Request) {
 		sid, _ := url.QueryUnescape(cookie.Value)
 		manager.provider.SessionDestroy(sid)
 		expiration := time.Now()
+		// MaxAge 设置为 -1 删除客户端的 cookie 缓存
 		cookie := http.Cookie{Name: manager.cookieName, Path: "/", HttpOnly: true, Expires: expiration, MaxAge: -1}
 		http.SetCookie(w, &cookie)
 	}
